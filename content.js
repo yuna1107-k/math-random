@@ -10,17 +10,41 @@ let processing = false;
 let originalTitle = null;
 let titleObserver = null;
 
+// Material Icons等のアイコンフォントは、DOM上のテキスト（例: "home"）を
+// フォントの合字でアイコン画像として表示している。変換すると合字が崩れ、
+// メニューボタン等のアイコン表示が壊れてしまうため対象から除外する。
+const ICON_FONT_NAME_PATTERN =
+  /material (icons|symbols)|font awesome|glyphicons|ionicons|icomoon|academicons|typicons|foundation-icons|simple-line-icons/i;
+
+function hasAriaHiddenAncestor(el) {
+  let cur = el;
+  while (cur) {
+    if (cur.getAttribute && cur.getAttribute("aria-hidden") === "true") return true;
+    cur = cur.parentElement;
+  }
+  return false;
+}
+
 function isConvertibleTextNode(node) {
   const parent = node.parentElement;
   if (!parent) return false;
   const tag = parent.tagName;
-  if (tag === "SCRIPT" || tag === "STYLE" || tag === "NOSCRIPT" || tag === "TEXTAREA") {
+  if (
+    tag === "SCRIPT" ||
+    tag === "STYLE" ||
+    tag === "NOSCRIPT" ||
+    tag === "TEXTAREA" ||
+    tag === "SELECT" ||
+    tag === "OPTION"
+  ) {
     return false;
   }
   if (parent.isContentEditable) return false;
   if (!node.textContent || !node.textContent.trim()) return false;
   const style = window.getComputedStyle(parent);
   if (style.display === "none" || style.visibility === "hidden") return false;
+  if (ICON_FONT_NAME_PATTERN.test(style.fontFamily || "")) return false;
+  if (hasAriaHiddenAncestor(parent)) return false;
   return true;
 }
 
