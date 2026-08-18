@@ -7,6 +7,8 @@ let originals = null; // Map<Text, string> | null（null = 未変換状態）
 let observer = null;
 let pendingQueue = [];
 let processing = false;
+let originalTitle = null;
+let titleObserver = null;
 
 function isConvertibleTextNode(node) {
   const parent = node.parentElement;
@@ -117,10 +119,45 @@ function stopObserving() {
   if (observer) observer.disconnect();
 }
 
+// <title>要素はdocument.body配下ではないため、専用のobserverで監視する。
+// SPAが通知件数の表示などでタブタイトルを動的に書き換えるケースに追従するため。
+function startObservingTitle() {
+  const titleEl = document.querySelector("title");
+  if (!titleEl) return;
+  if (!titleObserver) titleObserver = new MutationObserver(handleTitleMutation);
+  titleObserver.observe(titleEl, { childList: true, subtree: true, characterData: true });
+}
+
+function stopObservingTitle() {
+  if (titleObserver) titleObserver.disconnect();
+}
+
+function handleTitleMutation() {
+  stopObservingTitle();
+  originalTitle = document.title;
+  document.title = toRandomRadixString(originalTitle, currentRadixMode);
+  startObservingTitle();
+}
+
+function applyTitleConversion() {
+  originalTitle = document.title;
+  document.title = toRandomRadixString(originalTitle, currentRadixMode);
+  startObservingTitle();
+}
+
+function revertTitleConversion() {
+  stopObservingTitle();
+  if (originalTitle !== null) {
+    document.title = originalTitle;
+  }
+  originalTitle = null;
+}
+
 function applyConversion(radixMode) {
   if (originals) return;
   currentRadixMode = radixMode;
   originals = new Map();
+  applyTitleConversion();
   // 初回の変換キューを処理し終える前に監視を開始しておくことで、
   // SPAの初期描画直後に起きる再描画・DOM差し替えを取りこぼさないようにする。
   startObserving();
@@ -136,6 +173,7 @@ function revertConversion() {
     node.textContent = original;
   }
   originals = null;
+  revertTitleConversion();
 }
 
 function toggleConversion(radixMode) {
