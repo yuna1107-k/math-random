@@ -35,22 +35,12 @@ function collectVisibleTextNodesUnder(root) {
   return nodes;
 }
 
-const SUBSCRIPT_DIGITS = "₀₁₂₃₄₅₆₇₈₉";
-
-// 変換後の数値が何進数か見た目で分かるよう、基数を下付き数字で付与する（例: 1a₃₆）
-function toSubscriptDigits(number) {
-  return String(number)
-    .split("")
-    .map((digit) => SUBSCRIPT_DIGITS[Number(digit)])
-    .join("");
-}
-
 function toRandomRadixString(text, radixMode) {
   return Array.from(text)
     .map((ch) => {
       const codePoint = ch.codePointAt(0);
       const radix = radixMode === "random" ? Math.floor(Math.random() * 35) + 2 : parseInt(radixMode, 10);
-      return `${codePoint.toString(radix)}${toSubscriptDigits(radix)}`;
+      return `${codePoint.toString(radix)}(${radix})`;
     })
     .join(" ");
 }
