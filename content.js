@@ -1,5 +1,8 @@
-const STATE_KEY = "__mathRandomOriginals";
 const DEFAULT_RADIX_MODE = "random";
+
+let currentRadixMode = DEFAULT_RADIX_MODE;
+let originals = null; // Map<Text, string> | null（null = 未変換状態）
+let observer = null;
 
 function isConvertibleTextNode(node) {
   const parent = node.parentElement;
@@ -15,8 +18,8 @@ function isConvertibleTextNode(node) {
   return true;
 }
 
-function collectVisibleTextNodes() {
-  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
+function collectVisibleTextNodesUnder(root) {
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
     acceptNode: (node) =>
       isConvertibleTextNode(node) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT,
   });
@@ -38,26 +41,69 @@ function toRandomRadixString(text, radixMode) {
     .join(" ");
 }
 
-function applyConversion(radixMode) {
-  if (window[STATE_KEY]) return;
-  const originals = new Map();
-  for (const node of collectVisibleTextNodes()) {
-    originals.set(node, node.textContent);
-    node.textContent = toRandomRadixString(node.textContent, radixMode);
+function convertNode(node) {
+  if (!isConvertibleTextNode(node)) return;
+  originals.set(node, node.textContent);
+  node.textContent = toRandomRadixString(node.textContent, currentRadixMode);
+}
+
+// ページ側で新規追加/変更されたノードを変換する。
+// 自分自身の書き換えによるMutationは、書き込み中にobserverを止めることで無視する。
+function convertSubtree(root) {
+  if (root.nodeType === Node.TEXT_NODE) {
+    convertNode(root);
+    return;
   }
-  window[STATE_KEY] = originals;
+  if (root.nodeType !== Node.ELEMENT_NODE) return;
+  for (const node of collectVisibleTextNodesUnder(root)) {
+    convertNode(node);
+  }
+}
+
+function handleMutations(mutations) {
+  observer.disconnect();
+  for (const mutation of mutations) {
+    if (mutation.type === "childList") {
+      for (const added of mutation.addedNodes) {
+        convertSubtree(added);
+      }
+    } else if (mutation.type === "characterData") {
+      // ストリーミング表示等でテキストノードの内容が外部から書き換わったケース。
+      // 書き換わった新しい内容を元テキストとして記録し直し、改めて変換する。
+      convertNode(mutation.target);
+    }
+  }
+  observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+}
+
+function startObserving() {
+  if (!observer) observer = new MutationObserver(handleMutations);
+  observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+}
+
+function stopObserving() {
+  if (observer) observer.disconnect();
+}
+
+function applyConversion(radixMode) {
+  if (originals) return;
+  currentRadixMode = radixMode;
+  originals = new Map();
+  convertSubtree(document.body);
+  startObserving();
 }
 
 function revertConversion() {
-  if (!window[STATE_KEY]) return;
-  for (const [node, original] of window[STATE_KEY]) {
+  if (!originals) return;
+  stopObserving();
+  for (const [node, original] of originals) {
     node.textContent = original;
   }
-  delete window[STATE_KEY];
+  originals = null;
 }
 
 function toggleConversion(radixMode) {
-  if (window[STATE_KEY]) {
+  if (originals) {
     revertConversion();
     return false;
   }
@@ -73,6 +119,6 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type === "toggle") {
     sendResponse({ converted: toggleConversion(message.radixMode ?? DEFAULT_RADIX_MODE) });
   } else if (message?.type === "getState") {
-    sendResponse({ converted: Boolean(window[STATE_KEY]) });
+    sendResponse({ converted: Boolean(originals) });
   }
 });
