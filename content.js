@@ -61,14 +61,24 @@ function collectVisibleTextNodesUnder(root) {
   return nodes;
 }
 
+const MAX_LENGTH_MULTIPLIER = 2; // 元のテキスト長に対する変換後文字列の長さの上限倍率
+const MIN_MAX_LENGTH = 8; // 短いテキストでも最低限これだけは表示する
+
+// 変換後の文字列は1文字あたり数文字〜十数文字に膨張するため、そのまま
+// 表示するとナビゲーションやボタンなど幅の決まったUI要素のレイアウトが
+// 崩れてしまう。元のテキスト長に応じた上限で切り詰め、崩れを抑える。
 function toRandomRadixString(text, radixMode) {
-  return Array.from(text)
+  const converted = Array.from(text)
     .map((ch) => {
       const codePoint = ch.codePointAt(0);
       const radix = radixMode === "random" ? Math.floor(Math.random() * 35) + 2 : parseInt(radixMode, 10);
       return `${codePoint.toString(radix)}(${radix})`;
     })
     .join(" ");
+
+  const maxLength = Math.max(text.length * MAX_LENGTH_MULTIPLIER, MIN_MAX_LENGTH);
+  if (converted.length <= maxLength) return converted;
+  return `${converted.slice(0, maxLength - 1)}…`;
 }
 
 function convertNode(node) {
