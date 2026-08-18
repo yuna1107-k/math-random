@@ -3,6 +3,8 @@ const DEFAULT_RADIX_MODE = "random";
 let currentRadixMode = DEFAULT_RADIX_MODE;
 let originals = null; // Map<Text, string> | null（null = 未変換状態）
 let observer = null;
+let pendingQueue = [];
+let processing = false;
 
 function isConvertibleTextNode(node) {
   const parent = node.parentElement;
@@ -42,38 +44,59 @@ function toRandomRadixString(text, radixMode) {
 }
 
 function convertNode(node) {
-  if (!isConvertibleTextNode(node)) return;
+  if (!originals || !isConvertibleTextNode(node)) return;
   originals.set(node, node.textContent);
   node.textContent = toRandomRadixString(node.textContent, currentRadixMode);
 }
 
-// ページ側で新規追加/変更されたノードを変換する。
-// 自分自身の書き換えによるMutationは、書き込み中にobserverを止めることで無視する。
-function convertSubtree(root) {
+// キューに積まれたノードをアイドルタイム中に少しずつ変換する。
+// サイト自体のスクロール・入力・アニメーションをブロックしないための処理。
+function processQueue(deadline) {
+  while (pendingQueue.length > 0 && (deadline.timeRemaining() > 0 || deadline.didTimeout)) {
+    convertNode(pendingQueue.shift());
+  }
+
+  if (pendingQueue.length > 0) {
+    requestIdleCallback(processQueue);
+    return;
+  }
+
+  processing = false;
+  if (originals) startObserving();
+}
+
+function enqueueNodes(nodes) {
+  if (nodes.length === 0) return;
+  pendingQueue.push(...nodes);
+  if (processing) return;
+  processing = true;
+  stopObserving();
+  requestIdleCallback(processQueue);
+}
+
+// ページ側で新規追加/変更されたノードをキューに積む。
+// 自分自身の書き換えによるMutationは、処理中observerを止めることで無視する。
+function enqueueSubtree(root) {
   if (root.nodeType === Node.TEXT_NODE) {
-    convertNode(root);
+    enqueueNodes([root]);
     return;
   }
   if (root.nodeType !== Node.ELEMENT_NODE) return;
-  for (const node of collectVisibleTextNodesUnder(root)) {
-    convertNode(node);
-  }
+  enqueueNodes(collectVisibleTextNodesUnder(root));
 }
 
 function handleMutations(mutations) {
-  observer.disconnect();
   for (const mutation of mutations) {
     if (mutation.type === "childList") {
       for (const added of mutation.addedNodes) {
-        convertSubtree(added);
+        enqueueSubtree(added);
       }
     } else if (mutation.type === "characterData") {
       // ストリーミング表示等でテキストノードの内容が外部から書き換わったケース。
       // 書き換わった新しい内容を元テキストとして記録し直し、改めて変換する。
-      convertNode(mutation.target);
+      enqueueNodes([mutation.target]);
     }
   }
-  observer.observe(document.body, { childList: true, subtree: true, characterData: true });
 }
 
 function startObserving() {
@@ -89,13 +112,15 @@ function applyConversion(radixMode) {
   if (originals) return;
   currentRadixMode = radixMode;
   originals = new Map();
-  convertSubtree(document.body);
-  startObserving();
+  enqueueNodes(collectVisibleTextNodesUnder(document.body));
+  if (!processing) startObserving();
 }
 
 function revertConversion() {
   if (!originals) return;
   stopObserving();
+  pendingQueue = [];
+  processing = false;
   for (const [node, original] of originals) {
     node.textContent = original;
   }
