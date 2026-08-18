@@ -1,0 +1,32 @@
+# Unrelated local project folders kept in this workspace but not part of this repo
+Blender/
+CTF/
+CrayzyClock/
+HCE_Android/
+HelloKotlin/
+Lumina_neo/
+Pokecone/
+WebSite/
+edit-audio/
+findy-2/
+findy-campus-hackathon-02/
+my-hackathon-app/
+qr_clip/
+quiz/
+soshosai-monorepo-2026/
+test_countdownPage/
+uoaapp-android/
+x-algorithm/
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
+
+# Node
+node_modules/
+npm-debug.log*
+
+# Extension build output
+dist/
+*.zip
