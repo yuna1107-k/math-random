@@ -51,18 +51,21 @@ function convertNode(node) {
 
 // キューに積まれたノードをアイドルタイム中に少しずつ変換する。
 // サイト自体のスクロール・入力・アニメーションをブロックしないための処理。
+// 自分自身の書き込みによるMutationを無視するため、実際に書き込む瞬間だけ
+// observerを止める（スライスの前後は監視を維持し、SPAの再描画による変更を
+// 取りこぼさないようにする）。
 function processQueue(deadline) {
+  stopObserving();
   while (pendingQueue.length > 0 && (deadline.timeRemaining() > 0 || deadline.didTimeout)) {
     convertNode(pendingQueue.shift());
   }
+  if (originals) startObserving();
 
   if (pendingQueue.length > 0) {
     requestIdleCallback(processQueue);
-    return;
+  } else {
+    processing = false;
   }
-
-  processing = false;
-  if (originals) startObserving();
 }
 
 function enqueueNodes(nodes) {
@@ -70,7 +73,6 @@ function enqueueNodes(nodes) {
   pendingQueue.push(...nodes);
   if (processing) return;
   processing = true;
-  stopObserving();
   requestIdleCallback(processQueue);
 }
 
@@ -112,8 +114,10 @@ function applyConversion(radixMode) {
   if (originals) return;
   currentRadixMode = radixMode;
   originals = new Map();
+  // 初回の変換キューを処理し終える前に監視を開始しておくことで、
+  // SPAの初期描画直後に起きる再描画・DOM差し替えを取りこぼさないようにする。
+  startObserving();
   enqueueNodes(collectVisibleTextNodesUnder(document.body));
-  if (!processing) startObserving();
 }
 
 function revertConversion() {
