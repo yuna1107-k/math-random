@@ -1,4 +1,6 @@
 const DEFAULT_RADIX_MODE = "random";
+const IDLE_CALLBACK_TIMEOUT_MS = 50; // 真にアイドルになるまで待たず、この時間内に強制実行する
+const MAX_NODES_PER_FORCED_SLICE = 30; // タイムアウトによる強制実行時でもメインスレッドを長時間ブロックしないための上限
 
 let currentRadixMode = DEFAULT_RADIX_MODE;
 let originals = null; // Map<Text, string> | null（null = 未変換状態）
@@ -56,13 +58,18 @@ function convertNode(node) {
 // 取りこぼさないようにする）。
 function processQueue(deadline) {
   stopObserving();
-  while (pendingQueue.length > 0 && (deadline.timeRemaining() > 0 || deadline.didTimeout)) {
+  let forcedCount = 0;
+  while (
+    pendingQueue.length > 0 &&
+    (deadline.timeRemaining() > 0 || (deadline.didTimeout && forcedCount < MAX_NODES_PER_FORCED_SLICE))
+  ) {
     convertNode(pendingQueue.shift());
+    forcedCount++;
   }
   if (originals) startObserving();
 
   if (pendingQueue.length > 0) {
-    requestIdleCallback(processQueue);
+    requestIdleCallback(processQueue, { timeout: IDLE_CALLBACK_TIMEOUT_MS });
   } else {
     processing = false;
   }
@@ -73,7 +80,7 @@ function enqueueNodes(nodes) {
   pendingQueue.push(...nodes);
   if (processing) return;
   processing = true;
-  requestIdleCallback(processQueue);
+  requestIdleCallback(processQueue, { timeout: IDLE_CALLBACK_TIMEOUT_MS });
 }
 
 // ページ側で新規追加/変更されたノードをキューに積む。
