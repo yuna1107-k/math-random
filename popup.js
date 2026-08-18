@@ -1,14 +1,22 @@
-chrome.action.onClicked.addListener(async (tab) => {
-  if (!tab.id) return;
-  await chrome.scripting.executeScript({
+const toggleBtn = document.getElementById("toggle-btn");
+const radixSelect = document.getElementById("radix-mode");
+
+toggleBtn.addEventListener("click", async () => {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (!tab?.id) return;
+
+  const [{ result: converted }] = await chrome.scripting.executeScript({
     target: { tabId: tab.id },
     func: toggleConversion,
+    args: [radixSelect.value],
   });
+
+  toggleBtn.textContent = converted ? "元に戻す" : "変換する";
 });
 
 // chrome.scripting.executeScript でページ側に注入して実行する関数。
 // 外側のクロージャは参照できないため、必要な処理は全てこの関数内に閉じる。
-function toggleConversion() {
+function toggleConversion(radixMode) {
   const STATE_KEY = "__mathRandomOriginals";
 
   function isConvertibleTextNode(node) {
@@ -42,7 +50,7 @@ function toggleConversion() {
     return Array.from(text)
       .map((ch) => {
         const codePoint = ch.codePointAt(0);
-        const radix = Math.floor(Math.random() * 35) + 2; // 2〜36
+        const radix = radixMode === "random" ? Math.floor(Math.random() * 35) + 2 : parseInt(radixMode, 10);
         return codePoint.toString(radix);
       })
       .join(" ");
@@ -53,7 +61,7 @@ function toggleConversion() {
       node.textContent = original;
     }
     delete window[STATE_KEY];
-    return;
+    return false;
   }
 
   const originals = new Map();
@@ -62,4 +70,5 @@ function toggleConversion() {
     node.textContent = toRandomRadixString(node.textContent);
   }
   window[STATE_KEY] = originals;
+  return true;
 }
